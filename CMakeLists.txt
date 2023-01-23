@@ -1,10 +1,11 @@
 cmake_minimum_required (VERSION 3.14)
-project (procmon)
 
 # Set the project version number.
-set (procmon_VERSION_MAJOR 1)
-set (procmon_VERSION_MINOR 0)
-set (procmon_VERSION_PATCH 0)
+if (DEFINED ENV{VERSION})
+  project (procmon VERSION $ENV{VERSION})
+else()
+  project (procmon VERSION 0.0.0)
+endif()
 
 # make ncurses a requirement
 find_package(Curses REQUIRED)
@@ -22,7 +23,7 @@ include(FetchContent)
 FetchContent_Declare(
   bcc
   GIT_REPOSITORY https://github.com/iovisor/bcc.git
-  GIT_TAG        v0.10.0
+  GIT_TAG        v0.19.0
 )
 
 FetchContent_GetProperties(bcc)
@@ -51,6 +52,7 @@ FetchContent_MakeAvailable(Catch2)
 # Set compiler flags.
 set (CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -g -fno-omit-frame-pointer -DELPP_THREAD_SAFE -D ELPP_DEFAULT_LOG_FILE='\"/var/log/procmon.log\"'")
 set (CMAKE_CXX_STANDARD 17)
+set (CMAKE_CXX_STANDARD_REQUIRED True)
 
 # Include required versioning, bcc, logging and sqlite3 header files. 
 include_directories(
@@ -86,9 +88,9 @@ target_link_libraries(
   configuration-static
   tracer-static
   storage-static
+  display-static 
   common-static
   bcc-static
-  display-static 
   ${CURSES_LIBRARIES}
   -lpanel
   logging-static
@@ -125,12 +127,36 @@ set(CPACK_DEBIAN_PACKAGE_MAINTAINER  "OSS Tooling Dev Team OSSToolingDevTeam@ser
 
 # setup install
 INSTALL(TARGETS procmon DESTINATION /usr/bin)
-INSTALL(FILES procmon.1 DESTINATION /usr/share/man/man1/)
 
-# build debian package
-set(CPACK_GENERATOR "DEB")
-set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6 (>= 2.26.1), libstdc++6 (>= 3.4.22), libncurses5 (>= 5.0)")
-execute_process(COMMAND dpkg --print-architecture OUTPUT_VARIABLE CPACK_DEBIAN_PACKAGE_ARCHITECTURE OUTPUT_STRIP_TRAILING_WHITESPACE)
-set(CPACK_PACKAGE_FILE_NAME ${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}-${AZDO_BUILD_ID}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE})
+# are we running on centos or ubuntu build agent?
+execute_process(COMMAND lsb_release -si OUTPUT_VARIABLE distro OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+if(distro STREQUAL "CentOS")
+  set(CPACK_GENERATOR "RPM")
+  execute_process(COMMAND uname -m OUTPUT_VARIABLE CPACK_RPM_PACKAGE_ARCHITECTURE OUTPUT_STRIP_TRAILING_WHITESPACE)
+  set(CPACK_PACKAGE_FILE_NAME ${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}-${AZDO_BUILD_ID}.${CPACK_RPM_PACKAGE_ARCHITECTURE})
+
+elseif(distro STREQUAL "Ubuntu")
+  # get distro name
+  execute_process(COMMAND lsb_release -sc OUTPUT_VARIABLE distro_name OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+  # we are building a debian package
+  set(CPACK_GENERATOR "DEB")
+
+  # install manpage file
+  INSTALL(FILES procmon.1 DESTINATION /usr/share/man/man1/)
+
+  # check what version of Ubuntu we are working with
+  if(distro_name STREQUAL "bionic")   # 18.04
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6 (>= 2.26), libstdc++6 (>= 8.4), libzstd1 (>= 1.3), libelf1 (>= 0.170), libncurses5 (>= 5.0), libtinfo5 (>= 6)")
+  
+  elseif(distro_name STREQUAL "focal")    # 20.04
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6 (>= 2.31), libstdc++6 (>= 10.2), libzstd1 (>= 1.4), libelf1 (>= 0.176), libncurses6 (>= 6.2), libtinfo6 (>= 6)")
+  endif()
+
+  execute_process(COMMAND dpkg --print-architecture OUTPUT_VARIABLE CPACK_DEBIAN_PACKAGE_ARCHITECTURE OUTPUT_STRIP_TRAILING_WHITESPACE)
+  set(CPACK_PACKAGE_FILE_NAME ${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}-${AZDO_BUILD_ID}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE})
+
+endif()
 
 include(CPack)

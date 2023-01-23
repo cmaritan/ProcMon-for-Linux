@@ -11,6 +11,7 @@
 
 bcc_symbol_option EbpfTracerEngine::SymbolOption = {.use_debug_file = 1,
                                                     .check_debug_file_crc = 1,
+						    .lazy_symbolize = 1,
                                                     .use_symbol_type = (1 << STT_FUNC) | (1 << STT_GNU_IFUNC)};
 
 EbpfTracerEngine::EbpfTracerEngine(std::shared_ptr<IStorageEngine> storageEngine, std::vector<Event> targetEvents)
@@ -179,21 +180,6 @@ void EbpfTracerEngine::Consume()
         memset(tel.arguments, 0, MAX_BUFFER);
         memcpy(tel.arguments, event->buffer, MAX_BUFFER);
         tel.timestamp = event->timestamp;
-
-
-        // Update the syscallHitMap map to keep total running syscalls and durations. We store it here
-        // in a shared map to avoid the cost of keeping an additional table. The map is sorted by duration
-        // only when user requests it through the 'Stats' capability.
-        if(_syscallHitMap.find(syscall) != _syscallHitMap.end())
-        {
-            std::tuple<int, uint64_t>* _syscallTuple = &_syscallHitMap[syscall];
-            std::get<0>(*_syscallTuple)++;
-            std::get<1>(*_syscallTuple) += event->duration_ns;
-        }
-        else
-        {
-            _syscallHitMap.insert(std::make_pair(syscall, std::make_tuple(1, event->duration_ns)));
-        }
 
         batch.push_back(tel);
     }
